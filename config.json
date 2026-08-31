@@ -1,0 +1,43 @@
+{
+  "paths": {
+    "model_path": "hand_landmarker.task",
+    "recordings_dir": "recordings"
+  },
+  "camera": {
+    "index": 0,
+    "width": 640,
+    "height": 480
+  },
+  "landmarker": {
+    "num_hands": 1,
+    "min_hand_detection_confidence": 0.6,
+    "min_hand_presence_confidence": 0.7,
+    "min_tracking_confidence": 0.6
+  },
+  "quantize": {
+    "bin_size_deg": 15.0,
+    "hysteresis_deg": 4.0
+  },
+  "match": {
+    "threshold_default": 0.6,
+    "threshold_step": 0.05,
+    "threshold_min": 0.1,
+    "threshold_max": 2.0,
+    "cooldown_ms": 1000
+  },
+  "cursor": {
+    "region_margin": 0.2,
+    "smoothing": 0.35,
+    "deadzone": 0.008
+  },
+  "actions": {
+    "scroll_amount": 120
+  },
+  "keybindings": {
+    "quit": "q",
+    "toggle_cursor": "c",
+    "toggle_record": "r",
+    "threshold_tighten": "[",
+    "threshold_loosen": "]"
+  }
+}

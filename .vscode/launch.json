@@ -1,0 +1,19 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Hand Recognition (main app)",
+            "type": "node-terminal",
+            "request": "launch",
+            "command": "uv run hand-recognition",
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "name": "Web Demo (Streamlit)",
+            "type": "node-terminal",
+            "request": "launch",
+            "command": "uv run streamlit run src/hand_recognition/web_app.py",
+            "cwd": "${workspaceFolder}"
+        }
+    ]
+}
