@@ -1,9 +1,21 @@
 from dataclasses import dataclass
-from typing import Any, Sequence
+from typing import Protocol, Sequence, runtime_checkable
 
 import numpy as np
 
-Landmarks = Sequence[Any]
+
+@runtime_checkable
+class Landmark(Protocol):
+    """One of MediaPipe's 21 hand points. Named as a protocol so the stages
+    downstream depend on the three coordinates they read rather than on the
+    concrete type MediaPipe happens to hand over."""
+
+    x: float
+    y: float
+    z: float
+
+
+Landmarks = Sequence[Landmark]
 
 # Joint angles of one hand, in degrees - (15,).
 Angles = np.ndarray
@@ -60,6 +72,13 @@ class NormalizedPoint:
 class ScreenPoint:
     x: float
     y: float
+
+
+# A recorded gesture is a sequence of *changes*, so a few hundred frames is
+# already a long one. The ceiling exists because a recording that never stops
+# - a browser tab left open, or a hostile `.npz` - otherwise grows without
+# bound, and every matched frame is compared against every template.
+MAX_TEMPLATE_FRAMES = 3000
 
 
 @dataclass

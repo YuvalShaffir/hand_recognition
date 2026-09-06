@@ -216,9 +216,12 @@ the dead-zone + EMA combination is needed.
   frame
   first) for an action name, e.g. `left-click`. The name is slugified into a
   filename (collisions get `-2`, `-3`, ... suffixes rather than overwriting).
-  `GestureLibrary.add()` resolves the name, writes
-  `recordings/<slug>.npz` (see below) and admits the template in memory, so
-  the new gesture is immediately matchable without a reload.
+  `GestureLibrary.add()` resolves the name and admits the template in
+  memory, so the new gesture is immediately matchable without a reload. The
+  desktop app then hands it to `save_template()`, which writes
+  `recordings/<slug>.npz` (see below); the web app does not, so one browser
+  session's recordings never reach another's - see
+  `docs/adr/0002-gesture-libraries-are-in-memory-by-default.md`.
 
 ## Recording file format
 
@@ -230,8 +233,10 @@ size/parse speed over human-readability once the format stabilized:
 | `bin_size`   | float32 | scalar | degrees per quantization bin          |
 | `angle_bins` | int16   | (T,15) | quantized angle **bin index**, not degrees — reconstruct via `index * bin_size` |
 
-`GestureLibrary` is the only reader and the only writer; it reconstructs
-degrees on load. No timing is stored — see
+`gestures/persistence.py` is the only reader and the only writer; it
+reconstructs degrees on load, and validates the declared shape, dtype and
+frame count from the `.npy` header before materialising anything, because a
+recording is attacker-supplied wherever persistence is deployed. No timing is stored — see
 `docs/adr/0001-recording-format-stores-no-timing.md`. Recordings written
 before that change carry extra `t_ms`/`hysteresis` keys and still load,
 because the reader never touched them.
@@ -248,7 +253,8 @@ because the reader never touched them.
 | `gestures/angles.py`            | `AngleExtractor` — 21 landmarks -> 15 joint angles               |
 | `gestures/movement.py`          | `MovementExtractor` — binning with hysteresis (Schmitt trigger), emitting only on change |
 | `gestures/recorder.py`          | `GestureRecorder` — diverts movements out of the stream while recording |
-| `gestures/library.py`           | `GestureLibrary` — the stored templates, name resolution, `.npz` I/O |
+| `gestures/library.py`           | `GestureLibrary` — the in-memory templates and name resolution    |
+| `gestures/persistence.py`       | `load_templates()` / `save_template()` — the `.npz` I/O, and the only code that touches `recordings/` |
 | `gestures/matcher.py`           | `GestureMatcher` — DTW live matching against the library         |
 | `gestures/pipeline.py`          | `GesturePipeline` — the four above, composed; the recording API  |
 | `cursor/center.py`              | `HandCenterExtractor` — hand -> normalized centre point          |

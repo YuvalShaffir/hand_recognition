@@ -5,7 +5,12 @@ from ..config import AppConfig, KeybindConfig, load_config
 from ..cursor import CursorPipeline
 from ..cursor.driver import CursorDriver
 from ..domain import Detection
-from ..gestures import GestureLibrary, GesturePipeline
+from ..gestures import (
+    GestureLibrary,
+    GesturePipeline,
+    load_templates,
+    save_template,
+)
 from ..stage import Fork
 from ..vision import CaptureManager, HandDetector
 from .overlay import draw_hud, draw_landmarks, draw_recording_prompt_hint
@@ -32,7 +37,7 @@ class DesktopApp:
         c = self.config
 
         self.gestures = GesturePipeline(
-            GestureLibrary(c.paths.recordings_dir), c.quantize, c.match
+            GestureLibrary(load_templates(c.paths.recordings_dir)), c.quantize, c.match
         )
         self.driver = CursorDriver()
         self.cursor = CursorPipeline(c.cursor, self.driver.screen_size)
@@ -121,5 +126,8 @@ class DesktopApp:
         if stored is None:
             print("nothing recorded - the hand never moved")
             return
-        print(f"saved gesture '{stored}'")
+        path = save_template(
+            self.config.paths.recordings_dir, self.gestures.library.templates[-1]
+        )
+        print(f"saved gesture '{stored}' to {path}")
         print(f"known gestures: {self.gestures.library.names}")

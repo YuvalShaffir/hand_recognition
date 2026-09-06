@@ -12,14 +12,15 @@ flake8, mypy) plus the patterns below.
   for numpy arrays; a shape/dtype comment is fine where it isn't obvious
   (e.g. `# (T, 15) quantized angle vectors`).
 - Dataclasses for structured records instead of dicts or tuples (see
-  `GestureTemplate` in `gesture_dtw.py`).
+  `GestureTemplate` in `domain.py`).
 
 ## Comments & docstrings
 
 - No comments by default. Add one only when the *why* isn't obvious from the
   code itself — a non-obvious constraint, a workaround, or rationale that
-  would surprise a reader (e.g. why hysteresis exists in `quantize.py`, why
-  `hand_world_landmarks` is used instead of `hand_landmarks`). Never restate
+  would surprise a reader (e.g. why hysteresis exists in
+  `gestures/movement.py`, why `hand_world_landmarks` is used instead of
+  `hand_landmarks`). Never restate
   what the code visibly does.
 - Class/function docstrings: at most a short paragraph explaining intent,
   only when the name+signature don't already make it obvious. No
@@ -51,4 +52,13 @@ uv run flake8
 uv run mypy .
 ```
 
-No automated test suite exists yet in this repo.
+The `pytest` suite lives in `tests/`, mirroring the source tree, and runs
+with no display, webcam, model file or network:
+
+```
+uv run pytest
+```
+
+It is specified by `docs/TEST_PLAN.md`; the coverage gate is on by default
+(`--cov-fail-under=90`, with `apps/` and `model/` omitted), so add `--no-cov`
+when running a single file.

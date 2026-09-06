@@ -68,13 +68,17 @@ path**, `.venv-wsl` (gitignored), via `UV_PROJECT_ENVIRONMENT`:
 UV_PROJECT_ENVIRONMENT=.venv-wsl uv run black .
 UV_PROJECT_ENVIRONMENT=.venv-wsl uv run flake8
 UV_PROJECT_ENVIRONMENT=.venv-wsl uv run mypy .
+UV_PROJECT_ENVIRONMENT=.venv-wsl uv run pytest
 ```
 
 (Exporting `UV_PROJECT_ENVIRONMENT=.venv-wsl` once per WSL shell session in
 this repo avoids repeating it on every command.) Leave Windows-side `uv`
 commands (`uv sync`, `uv run hand-recognition`) alone — they should use the
 default `.venv`. These WSL commands check the code but can't run the app
-end-to-end (see above). No automated test suite exists yet.
+end-to-end (see above). The `pytest` suite, however, is designed to run
+here in full: it fakes `mediapipe`, `cv2`, `pyautogui` and `urllib` at their
+seams and needs no display, webcam, model file or network. It is specified
+by `docs/TEST_PLAN.md`.
 
 ## Code shape
 
@@ -112,7 +116,8 @@ The Streamlit demo runs with `streamlit run src/hand_recognition/apps/web.py`
   scheme, the DTW matching cost function, and the cursor-mode
   smoothing/dead-zone scheme.
 - `docs/PYTHON_STANDARDS.md` — code style conventions used in this repo.
-- `docs/TEST_PLAN.md` — the planned `pytest` suite. No suite exists yet.
+- `docs/TEST_PLAN.md` — the specification the `pytest` suite in `tests/` is
+  written from, and the checklist for knowing when it is done.
 - `docs/adr/` — decisions with consequences, one file each.
 
 ## Agent skills

@@ -90,4 +90,8 @@ class GestureMatcher(OptionalStage[Movement, str]):
 
     def _cooling_down(self, template: GestureTemplate, now_ms: int) -> bool:
         last = self._last_match_ms.get(template.name)
-        return last is not None and now_ms - last < self.cooldown_ms
+        if last is None:
+            return False
+        # Timestamps come from independent clocks (`CaptureManager`, the web
+        # app); a backwards jump must expire the cooldown, not freeze it.
+        return 0 <= now_ms - last < self.cooldown_ms

@@ -5,3 +5,6 @@ __pycache__/
 *.pyc
 .mypy_cache/
 recordings/*.npz
+# coverage
+.coverage
+htmlcov/

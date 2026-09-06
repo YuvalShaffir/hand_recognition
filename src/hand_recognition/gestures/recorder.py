@@ -1,6 +1,6 @@
 import numpy as np
 
-from ..domain import GestureTemplate, Movement
+from ..domain import MAX_TEMPLATE_FRAMES, GestureTemplate, Movement
 from ..stage import OptionalStage
 
 
@@ -32,10 +32,14 @@ class GestureRecorder(OptionalStage[Movement, Movement]):
         library's job."""
         self._recording = False
         frames = np.array([m.angles for m in self._movements], dtype=np.float64)
+        self._movements = []
         return GestureTemplate(name=name, bin_size=self._bin_size, frames=frames)
 
     def transform(self, item: Movement) -> Movement | None:
         if not self._recording:
             return item
-        self._movements.append(item)
+        # A recording nobody stops - a browser tab left open - would
+        # otherwise grow a list until the process it shares runs out.
+        if len(self._movements) < MAX_TEMPLATE_FRAMES:
+            self._movements.append(item)
         return None

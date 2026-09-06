@@ -1,9 +1,18 @@
 import json
 from dataclasses import dataclass, field, fields
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 DEFAULT_CONFIG_PATH = Path("config.json")
+
+# MediaPipe tracks a handful of hands at most; anything beyond this is a
+# configuration mistake or an attempt to make one frame cost minutes.
+MAX_NUM_HANDS = 4
+
+
+def _require(condition: bool, message: str) -> None:
+    if not condition:
+        raise ValueError(message)
 
 
 @dataclass
@@ -11,12 +20,21 @@ class PathsConfig:
     model_path: str = "hand_landmarker.task"
     recordings_dir: str = "recordings"
 
+    def __post_init__(self) -> None:
+        _require(bool(self.model_path), "paths.model_path must not be empty")
+        _require(bool(self.recordings_dir), "paths.recordings_dir must not be empty")
+
 
 @dataclass
 class CameraConfig:
     index: int = 0
     width: int = 640
     height: int = 480
+
+    def __post_init__(self) -> None:
+        _require(self.index >= 0, "camera.index must not be negative")
+        _require(self.width > 0, "camera.width must be positive")
+        _require(self.height > 0, "camera.height must be positive")
 
 
 @dataclass
@@ -26,11 +44,32 @@ class LandmarkerConfig:
     min_hand_presence_confidence: float = 0.7
     min_tracking_confidence: float = 0.6
 
+    def __post_init__(self) -> None:
+        _require(
+            1 <= self.num_hands <= MAX_NUM_HANDS,
+            f"landmarker.num_hands must be between 1 and {MAX_NUM_HANDS}",
+        )
+        for name in (
+            "min_hand_detection_confidence",
+            "min_hand_presence_confidence",
+            "min_tracking_confidence",
+        ):
+            _require(
+                0.0 <= getattr(self, name) <= 1.0,
+                f"landmarker.{name} must be between 0 and 1",
+            )
+
 
 @dataclass
 class QuantizeConfig:
     bin_size_deg: float = 15.0
     hysteresis_deg: float = 4.0
+
+    def __post_init__(self) -> None:
+        _require(self.bin_size_deg > 0, "quantize.bin_size_deg must be positive")
+        _require(
+            self.hysteresis_deg >= 0, "quantize.hysteresis_deg must not be negative"
+        )
 
 
 @dataclass
@@ -41,6 +80,19 @@ class MatchConfig:
     threshold_max: float = 2.0
     cooldown_ms: int = 1000
 
+    def __post_init__(self) -> None:
+        _require(self.threshold_min > 0, "match.threshold_min must be positive")
+        _require(
+            self.threshold_min <= self.threshold_max,
+            "match.threshold_min must not exceed match.threshold_max",
+        )
+        _require(
+            self.threshold_min <= self.threshold_default <= self.threshold_max,
+            "match.threshold_default must lie between the threshold bounds",
+        )
+        _require(self.threshold_step > 0, "match.threshold_step must be positive")
+        _require(self.cooldown_ms >= 0, "match.cooldown_ms must not be negative")
+
 
 @dataclass
 class CursorConfig:
@@ -48,10 +100,23 @@ class CursorConfig:
     smoothing: float = 0.35
     deadzone: float = 0.008
 
+    def __post_init__(self) -> None:
+        _require(
+            0.0 <= self.region_margin < 0.5,
+            "cursor.region_margin must be at least 0 and below 0.5",
+        )
+        _require(
+            0.0 <= self.smoothing <= 1.0, "cursor.smoothing must be between 0 and 1"
+        )
+        _require(self.deadzone >= 0, "cursor.deadzone must not be negative")
+
 
 @dataclass
 class ActionsConfig:
     scroll_amount: int = 120
+
+    def __post_init__(self) -> None:
+        _require(self.scroll_amount >= 0, "actions.scroll_amount must not be negative")
 
 
 @dataclass
@@ -61,6 +126,13 @@ class KeybindConfig:
     toggle_record: str = "r"
     threshold_tighten: str = "["
     threshold_loosen: str = "]"
+
+    def __post_init__(self) -> None:
+        for f in fields(self):
+            _require(
+                len(getattr(self, f.name)) == 1,
+                f"keybindings.{f.name} must be a single character",
+            )
 
 
 @dataclass
@@ -75,12 +147,30 @@ class AppConfig:
     keybindings: KeybindConfig = field(default_factory=KeybindConfig)
 
 
+def _value(section_cls: type, key: str, value: Any, expected: type) -> Any:
+    """JSON is untyped, so a value's type is checked here rather than left to
+    surface much later inside numpy or cv2. `type(...) is` rather than
+    `isinstance`, because `bool` is an `int` and `True` is not a width."""
+    if expected is float and type(value) is int:
+        return float(value)
+    if type(value) is not expected:
+        raise ValueError(
+            f"{section_cls.__name__}.{key} must be {expected.__name__}, "
+            f"got {value!r}"
+        )
+    return value
+
+
 def _section(section_cls: type, overrides: dict[str, Any]):
-    valid = {f.name for f in fields(section_cls)}
-    unknown = set(overrides) - valid
+    valid = {f.name: cast(type, f.type) for f in fields(section_cls)}
+    unknown = set(overrides) - set(valid)
     if unknown:
         raise ValueError(f"unknown {section_cls.__name__} key(s): {sorted(unknown)}")
-    return section_cls(**overrides)
+    typed = {
+        key: _value(section_cls, key, value, valid[key])
+        for key, value in overrides.items()
+    }
+    return section_cls(**typed)
 
 
 def load_config(path: Path | str = DEFAULT_CONFIG_PATH) -> AppConfig:
@@ -96,5 +186,8 @@ def load_config(path: Path | str = DEFAULT_CONFIG_PATH) -> AppConfig:
     if unknown_sections:
         raise ValueError(f"unknown config section(s): {sorted(unknown_sections)}")
 
-    kwargs = {f.name: _section(f.type, data.get(f.name, {})) for f in fields(AppConfig)}
+    kwargs = {
+        f.name: _section(cast(type, f.type), data.get(f.name, {}))
+        for f in fields(AppConfig)
+    }
     return AppConfig(**kwargs)

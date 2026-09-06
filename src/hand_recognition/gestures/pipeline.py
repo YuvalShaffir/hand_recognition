@@ -67,11 +67,12 @@ class GesturePipeline(Stage[Hand | None, str | None]):
         self._movements.reset()
         self._recorder.start()
 
-    def stop_recording(self, name: str = "", persist: bool = True) -> str | None:
+    def stop_recording(self, name: str = "") -> str | None:
         """Finishes the recording and admits it to the library, returning
         the name it was stored under - or None if the hand never moved and
-        there is no gesture to store."""
+        there is no gesture to store. Nothing reaches the filesystem here;
+        persisting the library is the front-end's business."""
         template = self._recorder.finish(name)
         if len(template.frames) == 0:
             return None
-        return self._library.add(template, persist=persist)
+        return self._library.add(template)

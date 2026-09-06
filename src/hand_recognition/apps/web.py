@@ -42,9 +42,7 @@ class GestureVideoProcessor(VideoProcessorBase):
     def __init__(self) -> None:
         config = load_config()
         self.config = config
-        self.gestures = GesturePipeline(
-            GestureLibrary(config.paths.recordings_dir), config.quantize, config.match
-        )
+        self.gestures = GesturePipeline(GestureLibrary(), config.quantize, config.match)
         self.cursor = CursorPipeline(config.cursor, REPORTED_SCREEN_SIZE)
         self._recognize = Fork(self.gestures, self.cursor)
         self._detector = HandDetector(config.paths.model_path, config.landmarker)
