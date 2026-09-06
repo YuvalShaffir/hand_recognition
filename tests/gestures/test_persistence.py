@@ -3,12 +3,14 @@ attacker-supplied wherever persistence is deployed, so all of that hostility
 is concentrated here."""
 
 import io
+import logging
 import zipfile
 
 import numpy as np
 import pytest
 
 from hand_recognition.domain import MAX_TEMPLATE_FRAMES, GestureTemplate
+from hand_recognition.gestures import persistence
 from hand_recognition.gestures.persistence import (
     MAX_FILENAME_STEM,
     load_templates,
@@ -28,6 +30,16 @@ def write_npz(path, bin_size=BIN, angle_bins=None, **extra):
         payload["bin_size"] = np.float32(bin_size)
     np.savez_compressed(path, **payload)
     return path
+
+
+def assert_rejected(tmp_path, caplog, reason, filename="bad.npz"):
+    """A bad recording costs the user that gesture and nothing else: it is
+    logged and skipped, so one file cannot stop the program from starting."""
+    with caplog.at_level(logging.WARNING):
+        assert load_templates(tmp_path) == []
+
+    assert filename in caplog.text
+    assert reason in caplog.text
 
 
 def test_save_then_load_round_trips_a_template(tmp_path):
@@ -87,8 +99,34 @@ def test_a_second_save_of_the_same_name_does_not_overwrite(tmp_path):
 def test_empty_template_file_is_skipped(tmp_path, caplog):
     write_npz(tmp_path / "empty.npz", angle_bins=np.zeros((0, 15), dtype=np.int16))
 
-    assert load_templates(tmp_path) == []
-    assert "empty.npz" in caplog.text
+    assert_rejected(tmp_path, caplog, "no frames", filename="empty.npz")
+
+
+def test_one_bad_recording_does_not_hide_the_good_ones(tmp_path, caplog):
+    """The reason rejection is a skip and not an exception: a single
+    unreadable file must not cost the user every other gesture, nor stop the
+    desktop app from starting."""
+    save_template(tmp_path, make_template(name="wave"))
+    (tmp_path / "corrupt.npz").write_bytes(b"not a zip at all")
+
+    with caplog.at_level(logging.WARNING):
+        loaded = load_templates(tmp_path)
+
+    assert [t.name for t in loaded] == ["wave"]
+    assert "corrupt.npz" in caplog.text
+
+
+def test_a_save_interrupted_partway_leaves_nothing_behind(tmp_path, mocker):
+    """A truncated `.npz` in `recordings/` is the file the next run trips
+    over, so the write lands beside its target and is renamed."""
+    mocker.patch.object(
+        persistence.np, "savez_compressed", side_effect=OSError("disk full")
+    )
+
+    with pytest.raises(OSError):
+        save_template(tmp_path, make_template(name="wave"))
+
+    assert list(tmp_path.iterdir()) == []
 
 
 def test_unreadable_directory_raises(tmp_path):
@@ -114,70 +152,74 @@ def test_save_to_a_readonly_directory_raises_oserror(tmp_path):
         readonly.chmod(0o755)
 
 
-def test_missing_bin_size_key_is_rejected(tmp_path):
+def test_missing_bin_size_key_is_rejected(tmp_path, caplog):
     write_npz(tmp_path / "bad.npz", bin_size=None)
 
-    with pytest.raises(ValueError, match="bin_size"):
-        load_templates(tmp_path)
+    assert_rejected(tmp_path, caplog, "bin_size")
 
 
-def test_missing_angle_bins_key_is_rejected(tmp_path):
+def test_missing_angle_bins_key_is_rejected(tmp_path, caplog):
     np.savez_compressed(tmp_path / "bad.npz", bin_size=np.float32(BIN))
 
-    with pytest.raises(ValueError, match="angle_bins"):
-        load_templates(tmp_path)
+    assert_rejected(tmp_path, caplog, "angle_bins")
 
 
-def test_wrong_angle_width_is_rejected(tmp_path):
+def test_wrong_angle_width_is_rejected(tmp_path, caplog):
     write_npz(tmp_path / "bad.npz", angle_bins=np.zeros((3, 7), dtype=np.int16))
 
-    with pytest.raises(ValueError, match="15 angles per frame"):
-        load_templates(tmp_path)
+    assert_rejected(tmp_path, caplog, "15 angles per frame")
 
 
-def test_one_dimensional_angle_bins_is_rejected(tmp_path):
+def test_one_dimensional_angle_bins_is_rejected(tmp_path, caplog):
     write_npz(tmp_path / "bad.npz", angle_bins=np.zeros(15, dtype=np.int16))
 
-    with pytest.raises(ValueError, match="2-dimensional"):
-        load_templates(tmp_path)
+    assert_rejected(tmp_path, caplog, "2-dimensional")
 
 
-def test_non_numeric_dtype_is_rejected(tmp_path):
+def test_non_numeric_dtype_is_rejected(tmp_path, caplog):
     write_npz(tmp_path / "bad.npz", angle_bins=np.full((3, 15), "x", dtype="<U1"))
 
-    with pytest.raises(ValueError, match="numeric"):
-        load_templates(tmp_path)
+    assert_rejected(tmp_path, caplog, "numeric")
 
 
 @pytest.mark.parametrize("bin_size", [0.0, -15.0])
-def test_zero_or_negative_bin_size_is_rejected(tmp_path, bin_size):
+def test_zero_or_negative_bin_size_is_rejected(tmp_path, caplog, bin_size):
     write_npz(tmp_path / "bad.npz", bin_size=bin_size)
 
-    with pytest.raises(ValueError, match="bin_size must be positive"):
-        load_templates(tmp_path)
+    assert_rejected(tmp_path, caplog, "bin_size must be positive")
+
+
+def test_an_array_of_bin_sizes_is_rejected(tmp_path, caplog):
+    """The same threat as the bomb below: a declared shape is checked before
+    the array behind it is read."""
+    np.savez_compressed(
+        tmp_path / "bad.npz",
+        bin_size=np.zeros(10_000_000, dtype=np.float32),
+        angle_bins=np.zeros((3, 15), dtype=np.int16),
+    )
+
+    assert_rejected(tmp_path, caplog, "single number")
 
 
 @pytest.mark.parametrize("poison", [np.nan, np.inf])
-def test_nan_or_inf_in_frames_is_rejected(tmp_path, poison):
+def test_nan_or_inf_in_frames_is_rejected(tmp_path, caplog, poison):
     frames = np.zeros((3, 15))
     frames[1, 2] = poison
     write_npz(tmp_path / "bad.npz", angle_bins=frames)
 
-    with pytest.raises(ValueError, match="non-finite"):
-        load_templates(tmp_path)
+    assert_rejected(tmp_path, caplog, "non-finite")
 
 
-def test_oversized_array_is_rejected(tmp_path):
+def test_oversized_array_is_rejected(tmp_path, caplog):
     write_npz(
         tmp_path / "bad.npz",
         angle_bins=np.zeros((MAX_TEMPLATE_FRAMES + 1, 15), dtype=np.int16),
     )
 
-    with pytest.raises(ValueError, match="the limit is"):
-        load_templates(tmp_path)
+    assert_rejected(tmp_path, caplog, "the limit is")
 
 
-def test_decompression_bomb_is_rejected(tmp_path):
+def test_decompression_bomb_is_rejected(tmp_path, caplog):
     """A few-KB `.npz` declaring gigabytes. The declared shape is checked
     from the `.npy` header, before anything is materialised."""
     header = io.BytesIO()
@@ -192,28 +234,25 @@ def test_decompression_bomb_is_rejected(tmp_path):
             archive.writestr("bin_size.npy", buffer.getvalue())
 
     assert path.stat().st_size < 2048
-    with pytest.raises(ValueError, match="the limit is"):
-        load_templates(tmp_path)
+    assert_rejected(tmp_path, caplog, "the limit is", filename="bomb.npz")
 
 
-def test_a_corrupt_file_is_rejected_by_name(tmp_path):
-    """One unreadable recording must name itself rather than raising a
+def test_a_corrupt_file_is_rejected_by_name(tmp_path, caplog):
+    """An unreadable recording names itself, rather than surfacing as a
     `BadZipFile` from somewhere inside numpy."""
     (tmp_path / "corrupt.npz").write_bytes(b"not a zip at all")
 
-    with pytest.raises(ValueError, match="corrupt.npz"):
-        load_templates(tmp_path)
+    assert_rejected(tmp_path, caplog, "not a readable", filename="corrupt.npz")
 
 
-def test_pickle_payload_is_refused(tmp_path):
+def test_pickle_payload_is_refused(tmp_path, caplog):
     """`allow_pickle` defaults to False; this pins that default, because it
     is the one place a bad file is code execution rather than a crash."""
     payload = np.empty((3, 15), dtype=object)
     payload[:] = None
     np.savez(tmp_path / "bad.npz", bin_size=np.float32(BIN), angle_bins=payload)
 
-    with pytest.raises(ValueError):
-        load_templates(tmp_path)
+    assert_rejected(tmp_path, caplog, "numeric")
 
 
 def test_very_long_filename_is_truncated(tmp_path):

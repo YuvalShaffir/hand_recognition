@@ -157,13 +157,15 @@ def test_matcher_window_never_exceeds_twice_the_longest_template():
 
 @pytest.mark.parametrize("n, m", [(4, 4), (8, 4), (13, 7)])
 def test_dtw_cell_count_stays_within_budget(mocker, n, m):
+    """`O(n*m)` cells, but only `O(m)` of them alive at once: the step costs
+    are built a row at a time, so a long template cannot allocate an
+    `(n, m, 15)` block per frame."""
     spy = mocker.spy(matcher_module.np, "abs")
-    a = np.zeros((n, 15))
-    b = np.zeros((m, 15))
 
-    dtw_distance(a, b, BIN)
+    dtw_distance(np.zeros((n, 15)), np.zeros((m, 15)), BIN)
 
-    assert spy.spy_return.shape == (n, m, 15)
+    assert spy.call_count == n
+    assert spy.spy_return.shape == (m, 15)
 
 
 def test_recorder_memory_is_bounded_by_the_cap():

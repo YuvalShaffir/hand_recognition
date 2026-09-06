@@ -231,12 +231,19 @@ size/parse speed over human-readability once the format stabilized:
 | key          | dtype   | shape  | meaning                              |
 |--------------|---------|--------|---------------------------------------|
 | `bin_size`   | float32 | scalar | degrees per quantization bin          |
-| `angle_bins` | int16   | (T,15) | quantized angle **bin index**, not degrees — reconstruct via `index * bin_size` |
+| `angle_bins` | int32   | (T,15) | quantized angle **bin index**, not degrees — reconstruct via `index * bin_size` |
+
+(`int32` since the suite landed; files written as `int16` still load, the
+reader takes any integer or float width.)
 
 `gestures/persistence.py` is the only reader and the only writer; it
 reconstructs degrees on load, and validates the declared shape, dtype and
 frame count from the `.npy` header before materialising anything, because a
-recording is attacker-supplied wherever persistence is deployed. No timing is stored — see
+recording is attacker-supplied wherever persistence is deployed. A file that
+fails validation is logged and skipped, never raised: one unreadable
+recording costs that one gesture, not the program's ability to start. Saves
+go to a `.part` file beside the target and are renamed, so an interrupted
+write leaves nothing for the next run to trip over. No timing is stored — see
 `docs/adr/0001-recording-format-stores-no-timing.md`. Recordings written
 before that change carry extra `t_ms`/`hysteresis` keys and still load,
 because the reader never touched them.

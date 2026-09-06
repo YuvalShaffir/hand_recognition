@@ -22,15 +22,18 @@ def dtw_distance(
     needs no further work.
     """
     n, m = len(a), len(b)
-    steps = np.abs(b[None, :, :] - a[:, None, :]).mean(axis=2) / bin_size  # (n, m)
     limit = abandon_above * (n + m)
 
     # The DP runs on Python floats, not on a numpy array: it is a serial
     # recurrence over ~n*m cells, and element-wise numpy indexing costs far
-    # more per cell than the arithmetic does.
+    # more per cell than the arithmetic does. The step costs are built one
+    # row at a time rather than as one (n, m, 15) block: the block is n
+    # times the memory for no less arithmetic, and an abandoned template
+    # never pays for the rows below the one that lost.
     previous = [math.inf] * (m + 1)
     previous[0] = 0.0
-    for row in steps.tolist():
+    for frame in a:
+        row = (np.abs(b - frame).mean(axis=1) / bin_size).tolist()  # (m,)
         current = [math.inf] * (m + 1)
         cheapest = math.inf
         for j in range(1, m + 1):

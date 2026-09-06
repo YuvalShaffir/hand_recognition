@@ -96,6 +96,7 @@ def test_null_value_for_a_key(tmp_path):
     "data, message",
     [
         ({"quantize": {"bin_size_deg": 0}}, "bin_size_deg"),
+        ({"quantize": {"bin_size_deg": 0.0001}}, "bin_size_deg"),
         ({"quantize": {"bin_size_deg": -15.0}}, "bin_size_deg"),
         ({"quantize": {"hysteresis_deg": -1.0}}, "hysteresis_deg"),
         ({"match": {"threshold_min": 1.5, "threshold_max": 0.5}}, "threshold_min"),

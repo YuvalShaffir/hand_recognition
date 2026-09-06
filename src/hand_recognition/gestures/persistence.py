@@ -27,7 +27,11 @@ _ANGLE_BINS = "angle_bins"
 def load_templates(directory: Path | str) -> list[GestureTemplate]:
     """Reads every `.npz` recording in a directory, newest state of the disk
     at the moment of the call. A missing directory is a first run, not an
-    error."""
+    error.
+
+    A recording that fails validation is logged and skipped rather than
+    raised: one unreadable file must cost the user that one gesture, not
+    every gesture and the program's ability to start."""
     directory = Path(directory)
     if not directory.is_dir():
         return []
@@ -35,7 +39,11 @@ def load_templates(directory: Path | str) -> list[GestureTemplate]:
     paths = sorted(p for p in directory.iterdir() if p.suffix == ".npz")
     templates = []
     for path in paths:
-        template = _load_one(path)
+        try:
+            template = _load_one(path)
+        except ValueError as error:
+            logger.warning("skipping %s: %s", path, error)
+            continue
         if template is not None:
             templates.append(template)
     return templates
@@ -48,11 +56,22 @@ def save_template(directory: Path | str, template: GestureTemplate) -> Path:
     directory.mkdir(parents=True, exist_ok=True)
 
     path = _free_path(directory, _filename_stem(template.name))
-    np.savez_compressed(
-        path,
-        bin_size=np.float32(template.bin_size),
-        angle_bins=np.rint(template.frames / template.bin_size).astype(np.int16),
-    )
+    # Written beside the target and renamed, so an interrupted save leaves
+    # no truncated `.npz` behind for the next run to trip over.
+    partial = path.with_name(path.name + ".part")
+    try:
+        with partial.open("wb") as handle:
+            np.savez_compressed(
+                handle,
+                bin_size=np.float32(template.bin_size),
+                angle_bins=np.rint(template.frames / template.bin_size).astype(
+                    np.int32
+                ),
+            )
+        partial.replace(path)
+    except BaseException:
+        partial.unlink(missing_ok=True)
+        raise
     return path
 
 
@@ -108,8 +127,15 @@ def _check_declared_array(path: Path) -> None:
         names = set(archive.namelist())
         if f"{_ANGLE_BINS}.npy" not in names:
             raise ValueError(f"{path}: missing the 'angle_bins' entry")
+        if f"{_BIN_SIZE}.npy" not in names:
+            raise ValueError(f"{path}: missing the 'bin_size' entry")
+        with archive.open(f"{_BIN_SIZE}.npy") as member:
+            bin_size_shape, _ = _read_header(path, member)
         with archive.open(f"{_ANGLE_BINS}.npy") as member:
             shape, dtype = _read_header(path, member)
+
+    if int(np.prod(bin_size_shape)) != 1:
+        raise ValueError(f"{path}: bin_size must be a single number")
 
     if len(shape) != 2:
         raise ValueError(f"{path}: angle_bins must be 2-dimensional, got {shape}")

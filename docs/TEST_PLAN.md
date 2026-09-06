@@ -806,6 +806,12 @@ the places the code won.
   `test_recording_leaves_the_filesystem_untouched` (the split removed the
   `persist` flag); `test_a_multi_character_binding_raises` and
   `test_an_empty_binding_raises` merged into one parametrised case.
+- **An invalid recording is skipped and logged, not raised.** The plan's
+  `.npz` cases are named `..._is_rejected`, and rejection that takes the
+  whole library down with it just moves the "one bad file bricks startup"
+  finding rather than fixing it. `assert_rejected` in
+  `test_persistence.py` asserts the file is skipped *and* that the reason
+  names it.
 - **Findings 1-6 are fixed, not pinned.** Config values are validated on
   load, recorder and template lengths are capped
   (`domain.MAX_TEMPLATE_FRAMES`), `.npz` files are validated from the header

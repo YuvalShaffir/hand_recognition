@@ -5,6 +5,11 @@ from typing import Any, cast
 
 DEFAULT_CONFIG_PATH = Path("config.json")
 
+# Recordings store angles as bin *indices*, so a vanishingly small bin makes
+# an ordinary angle a huge index - and an angle finer than this is noise off
+# `arccos`, not hand movement.
+MIN_BIN_SIZE_DEG = 0.1
+
 # MediaPipe tracks a handful of hands at most; anything beyond this is a
 # configuration mistake or an attempt to make one frame cost minutes.
 MAX_NUM_HANDS = 4
@@ -66,7 +71,10 @@ class QuantizeConfig:
     hysteresis_deg: float = 4.0
 
     def __post_init__(self) -> None:
-        _require(self.bin_size_deg > 0, "quantize.bin_size_deg must be positive")
+        _require(
+            self.bin_size_deg >= MIN_BIN_SIZE_DEG,
+            f"quantize.bin_size_deg must be at least {MIN_BIN_SIZE_DEG}",
+        )
         _require(
             self.hysteresis_deg >= 0, "quantize.hysteresis_deg must not be negative"
         )
