@@ -1,5 +1,7 @@
 # hand_recognition
 
+[![CI](https://github.com/YuvalShaffir/hand_recognition/actions/workflows/ci.yml/badge.svg)](https://github.com/YuvalShaffir/hand_recognition/actions/workflows/ci.yml)
+
 Webcam hand-gesture recognition that maps custom gestures to real OS mouse
 actions — record a hand pose sequence as a named macro, and when you perform
 it again live, it fires the mapped action (`left-click`, `right-click`,

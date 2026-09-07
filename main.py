@@ -1,4 +1,4 @@
-import cv2 
+import cv2
 
 capture = cv2.VideoCapture(index=0)
 

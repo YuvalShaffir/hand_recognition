@@ -59,6 +59,10 @@ with no display, webcam, model file or network:
 uv run pytest
 ```
 
+All four commands run on every pull request - see
+`.github/workflows/ci.yml`, which checks formatting, lint and types once and
+runs the suite on both Linux and Windows.
+
 It is specified by `docs/TEST_PLAN.md`; the coverage gate is on by default
 (`--cov-fail-under=90`, with `apps/` and `model/` omitted), so add `--no-cov`
 when running a single file.
