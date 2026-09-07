@@ -731,37 +731,45 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "av" },
-    { name = "black" },
-    { name = "flake8" },
-    { name = "hypothesis" },
     { name = "mediapipe" },
-    { name = "mypy" },
     { name = "numpy" },
     { name = "opencv-python" },
     { name = "pyautogui" },
+    { name = "streamlit" },
+    { name = "streamlit-webrtc" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "black" },
+    { name = "flake8" },
+    { name = "hypothesis" },
+    { name = "mypy" },
     { name = "pytest" },
     { name = "pytest-cov" },
     { name = "pytest-mock" },
-    { name = "streamlit" },
-    { name = "streamlit-webrtc" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "av", specifier = ">=13.1.0" },
-    { name = "black", specifier = ">=26.5.1" },
-    { name = "flake8", specifier = ">=7.3.0" },
-    { name = "hypothesis", specifier = ">=6.130.0" },
     { name = "mediapipe", specifier = ">=1.0.0" },
-    { name = "mypy", specifier = ">=2.3.1" },
     { name = "numpy", specifier = ">=2.5.2" },
     { name = "opencv-python", specifier = ">=5.0.0.93" },
     { name = "pyautogui", specifier = ">=0.9.54" },
+    { name = "streamlit", specifier = ">=1.40.0" },
+    { name = "streamlit-webrtc", specifier = ">=0.47.0" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "black", specifier = ">=26.5.1" },
+    { name = "flake8", specifier = ">=7.3.0" },
+    { name = "hypothesis", specifier = ">=6.130.0" },
+    { name = "mypy", specifier = ">=2.3.1" },
     { name = "pytest", specifier = ">=9.1.1" },
     { name = "pytest-cov", specifier = ">=7.0.0" },
     { name = "pytest-mock", specifier = ">=3.15.1" },
-    { name = "streamlit", specifier = ">=1.40.0" },
-    { name = "streamlit-webrtc", specifier = ">=0.47.0" },
 ]
 
 [[package]]

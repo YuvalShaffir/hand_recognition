@@ -6,19 +6,25 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "av>=13.1.0",
-    "black>=26.5.1",
-    "flake8>=7.3.0",
-    "hypothesis>=6.130.0",
     "mediapipe>=1.0.0",
-    "mypy>=2.3.1",
     "numpy>=2.5.2",
     "opencv-python>=5.0.0.93",
     "pyautogui>=0.9.54",
+    "streamlit>=1.40.0",
+    "streamlit-webrtc>=0.47.0",
+]
+
+# Installed by `uv sync` and `uv run`, but not by anything installing the
+# application - nobody running a gesture recogniser needs a linter.
+[dependency-groups]
+dev = [
+    "black>=26.5.1",
+    "flake8>=7.3.0",
+    "hypothesis>=6.130.0",
+    "mypy>=2.3.1",
     "pytest>=9.1.1",
     "pytest-cov>=7.0.0",
     "pytest-mock>=3.15.1",
-    "streamlit>=1.40.0",
-    "streamlit-webrtc>=0.47.0",
 ]
 
 [project.scripts]

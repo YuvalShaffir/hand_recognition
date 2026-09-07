@@ -1,8 +1,8 @@
 # Python Standards
 
 Conventions already established in this codebase. Follow them for consistency;
-they're enforced/checked by the tools declared in `pyproject.toml` (black,
-flake8, mypy) plus the patterns below.
+they're enforced/checked by the tools in `pyproject.toml`'s `dev`
+dependency group (black, flake8, mypy, pytest) plus the patterns below.
 
 ## Language & typing
 
