@@ -18,7 +18,7 @@ from hand_recognition.config import (
 
 def write(tmp_path, data):
     path = tmp_path / "config.json"
-    path.write_text(json.dumps(data))
+    path.write_text(json.dumps(data), encoding="utf-8")
     return path
 
 
@@ -68,7 +68,7 @@ def test_unknown_key_raises(tmp_path):
 
 def test_malformed_json_raises_json_decode_error(tmp_path):
     path = tmp_path / "config.json"
-    path.write_text("{not json")
+    path.write_text("{not json", encoding="utf-8")
 
     with pytest.raises(json.JSONDecodeError):
         load_config(path)
@@ -76,8 +76,10 @@ def test_malformed_json_raises_json_decode_error(tmp_path):
 
 def test_directory_passed_as_path_raises(tmp_path):
     """`load_config` stats the path and then reads it; a directory gets past
-    the first and fails the second. Pinned rather than blessed."""
-    with pytest.raises(IsADirectoryError):
+    the first and fails the second. Pinned rather than blessed - which of
+    `IsADirectoryError` and `PermissionError` comes back is the platform's
+    choice, so this asserts their common base."""
+    with pytest.raises(OSError):
         load_config(tmp_path)
 
 
@@ -142,6 +144,16 @@ def test_an_integer_is_accepted_where_a_float_is_expected(tmp_path):
     config = load_config(write(tmp_path, {"quantize": {"bin_size_deg": 15}}))
 
     assert config.quantize.bin_size_deg == 15.0
+
+
+def test_a_utf8_config_file_is_read_as_utf8(tmp_path):
+    """JSON is UTF-8 by definition; reading it in the machine's locale
+    encoding fails outright on a Windows console codepage."""
+    path = tmp_path / "config.json"
+    payload = json.dumps({"paths": {"model_path": "modèle.task"}}, ensure_ascii=False)
+    path.write_bytes(payload.encode("utf-8"))
+
+    assert load_config(path).paths.model_path == "modèle.task"
 
 
 def test_the_shipped_config_is_valid():

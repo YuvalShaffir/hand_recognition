@@ -189,7 +189,7 @@ def load_config(path: Path | str = DEFAULT_CONFIG_PATH) -> AppConfig:
     if not path.exists():
         return AppConfig()
 
-    data = json.loads(path.read_text())
+    data = json.loads(path.read_text(encoding="utf-8"))
     unknown_sections = set(data) - {f.name for f in fields(AppConfig)}
     if unknown_sections:
         raise ValueError(f"unknown config section(s): {sorted(unknown_sections)}")

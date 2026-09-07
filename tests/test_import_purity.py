@@ -110,7 +110,7 @@ def _module_path(module: str) -> Path | None:
 def _imported_modules(module: str, path: Path) -> set[str]:
     package = module if path.name == "__init__.py" else module.rpartition(".")[0]
     found: set[str] = set()
-    for node in ast.walk(ast.parse(path.read_text())):
+    for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
         if isinstance(node, ast.Import):
             found.update(alias.name for alias in node.names)
         elif isinstance(node, ast.ImportFrom):

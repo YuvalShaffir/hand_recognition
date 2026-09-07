@@ -5,6 +5,7 @@ is concentrated here."""
 import io
 import logging
 import zipfile
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -129,27 +130,23 @@ def test_a_save_interrupted_partway_leaves_nothing_behind(tmp_path, mocker):
     assert list(tmp_path.iterdir()) == []
 
 
-def test_unreadable_directory_raises(tmp_path):
-    locked = tmp_path / "locked"
-    locked.mkdir()
-    save_template(locked, make_template(name="wave"))
-    locked.chmod(0o000)
-    try:
-        with pytest.raises(PermissionError):
-            load_templates(locked)
-    finally:
-        locked.chmod(0o755)
+def test_unreadable_directory_raises(tmp_path, mocker):
+    """A directory that cannot be listed is the user's problem to fix, not
+    something to report as "no gestures". The permission failure is faked at
+    the filesystem boundary rather than made with `chmod`, which does not
+    deny the owner anything on Windows."""
+    save_template(tmp_path, make_template(name="wave"))
+    mocker.patch.object(Path, "iterdir", side_effect=PermissionError("denied"))
+
+    with pytest.raises(PermissionError):
+        load_templates(tmp_path)
 
 
-def test_save_to_a_readonly_directory_raises_oserror(tmp_path):
-    readonly = tmp_path / "readonly"
-    readonly.mkdir()
-    readonly.chmod(0o500)
-    try:
-        with pytest.raises(OSError):
-            save_template(readonly, make_template(name="wave"))
-    finally:
-        readonly.chmod(0o755)
+def test_save_to_a_readonly_directory_raises_oserror(tmp_path, mocker):
+    mocker.patch.object(Path, "mkdir", side_effect=PermissionError("read-only"))
+
+    with pytest.raises(OSError):
+        save_template(tmp_path / "recordings", make_template(name="wave"))
 
 
 def test_missing_bin_size_key_is_rejected(tmp_path, caplog):
