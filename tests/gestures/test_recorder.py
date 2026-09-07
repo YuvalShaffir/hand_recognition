@@ -1,3 +1,5 @@
+import logging
+
 import numpy as np
 import pytest
 
@@ -104,12 +106,14 @@ def test_empty_name_is_accepted(recorder):
     assert recorder.finish("").name == ""
 
 
-def test_recording_stops_collecting_at_the_cap(recorder):
+def test_recording_stops_collecting_at_the_cap(recorder, caplog):
     """A session that starts recording and walks away would otherwise grow
     a list forever, on a container it shares with other sessions."""
     recorder.start()
-    for movement in movements(MAX_TEMPLATE_FRAMES + 500):
-        recorder.apply(movement)
+    with caplog.at_level(logging.WARNING):
+        for movement in movements(MAX_TEMPLATE_FRAMES + 500):
+            recorder.apply(movement)
 
     assert recorder.frame_count == MAX_TEMPLATE_FRAMES
+    assert caplog.text.count("frame cap") == 1
     assert recorder.finish("wave").frames.shape == (MAX_TEMPLATE_FRAMES, 15)

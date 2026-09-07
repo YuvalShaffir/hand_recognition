@@ -1,7 +1,11 @@
+import logging
+
 import numpy as np
 
 from ..domain import MAX_TEMPLATE_FRAMES, GestureTemplate, Movement
 from ..stage import OptionalStage
+
+logger = logging.getLogger(__name__)
 
 
 class GestureRecorder(OptionalStage[Movement, Movement]):
@@ -42,4 +46,10 @@ class GestureRecorder(OptionalStage[Movement, Movement]):
         # otherwise grow a list until the process it shares runs out.
         if len(self._movements) < MAX_TEMPLATE_FRAMES:
             self._movements.append(item)
+            if len(self._movements) == MAX_TEMPLATE_FRAMES:
+                logger.warning(
+                    "recording reached the %d-frame cap; further movements are "
+                    "being dropped",
+                    MAX_TEMPLATE_FRAMES,
+                )
         return None
