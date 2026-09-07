@@ -1,8 +1,8 @@
-from .app import App
+from .apps import DesktopApp
 
 
 def main() -> None:
-    App().run()
+    DesktopApp().run()
 
 
 if __name__ == "__main__":

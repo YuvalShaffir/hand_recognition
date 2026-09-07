@@ -9,29 +9,86 @@ prototype** (opens a camera, shows the frame, no hand tracking or gesture
 logic) — despite the name, it is not part of the pipeline, isn't part of
 the package, and isn't kept in sync with the rest of the code.
 
-Within the package:
+Within the package, `__main__.py` is a thin entry point
+(`DesktopApp().run()`), reached via `python -m hand_recognition` or the
+`hand-recognition` console script.
 
-- `__main__.py` — thin entry point (`App().run()`), reached via
-  `python -m hand_recognition` or the `hand-recognition` console script.
-- `app.py` — `App`: owns all live state (recorder, matcher, cursor,
-  threshold) and runs the camera/detection loop and key handling. This is
-  what used to be the monolithic `prot.py`.
-- `landmarker.py` — MediaPipe `HandLandmarker` wiring (`create_landmarker`)
-  and `HandLandmarkBuffer`, a thread-safe holder for the latest async
-  detection result.
-- `overlay.py` — frame drawing: hand skeleton (`draw_landmarks`) and HUD
-  text (`draw_hud`, `draw_recording_prompt_hint`).
+Three modules sit at the package root because everything else is written
+in terms of them:
+
+- `stage.py` — `Stage`, the one-item-in/one-item-out building block every
+  step is made of, plus `OptionalStage` (passes `None` through) and `Fork`
+  (feeds one stream to two stages). Stages compose with `|`.
+- `domain.py` — the types that travel between stages (`Frame`, `Hand`,
+  `Detection`, `Pose`, `Movement`, `ScreenPoint`, `GestureTemplate`).
 - `config.py` — `AppConfig` dataclass tree + `load_config()`; see
   "Configuration" below.
 
+Then one folder per link in the chain, each a pipeline over those:
+
+- `vision/` — frames and hands. `capture.py` (`CaptureManager`: the webcam
+  as a stream of mirrored, timestamped `Frame`s), `detection.py`
+  (`HandDetector`, a `Stage[Frame, Detection]` wrapping MediaPipe's
+  `HandLandmarker` plus a thread-safe holder for the latest async result),
+  and `model_asset.py` (`ensure_model()`, the first-run model download).
+- `gestures/` — hands to gesture names (see the module map below).
+- `cursor/` — hands to screen positions (same).
+- `actions.py` — gesture names to OS effects.
+
+And the front-ends, which own no recognition state:
+
+- `apps/desktop.py` — `DesktopApp`: the desktop program (window, keyboard,
+  OS output), which wires the camera to the pipelines. This is what used to
+  be the monolithic `app.py`.
+- `apps/web.py` — the Streamlit demo, `streamlit run
+  src/hand_recognition/apps/web.py`. Report-only: it must not reach
+  `actions.py` or `cursor/driver.py`, which import `pyautogui`.
+- `apps/overlay.py` — frame drawing shared by both: hand skeleton
+  (`draw_landmarks`) and HUD text (`draw_hud`,
+  `draw_recording_prompt_hint`).
+
 `gesture_recognizer.task` (repo root) is an unused leftover asset — no code
-currently loads it. Only `hand_landmarker.task` is used, by `landmarker.py`.
+currently loads it. Only `hand_landmarker.task` is used, by `vision/detection.py`.
 
 Neither `.task` file is committed (`*.task` is gitignored — they're
-generated binary assets, ~8MB each). `landmarker.ensure_model()` downloads
+generated binary assets, ~8MB each). `vision.ensure_model()` downloads
 `hand_landmarker.task` from MediaPipe's official hosted URL on first run if
 it's missing, so a fresh clone only needs `uv run hand-recognition` (plus
 one-time network access) — no manual asset step.
+
+## The stage model
+
+Everything between the camera and the OS is a `Stage`: one item in, one item
+out, composed left to right with `|` into a longer stage that is itself a
+stage. `GesturePipeline` and `CursorPipeline` are exactly that — a composed
+chain plus the small API the front-ends need (recording, threshold, on/off)
+— which is why a front-end can hold one and never see the steps inside it.
+
+Two consequences are worth stating outright, because they explain shapes
+that would otherwise look odd:
+
+**Nothing-to-report is `None`, not a skipped item.** A stage that only
+produces a result some of the time — no hand in frame, hand held still,
+gesture not matched — returns `None`, and `OptionalStage` passes `None`
+straight through without calling the step's own logic. If instead a stage
+could drop items, the two branches of the fork would advance at different
+rates and a "current" cursor position could belong to a different frame than
+the gesture beside it. One item per frame, all the way down, removes that
+class of bug entirely.
+
+**Stages are both push and pull.** `apply(item)` handles a single item;
+calling the stage on an iterator returns an iterator. The desktop app pulls
+— it drives a `for` loop over the camera — while Streamlit pushes, handing
+one frame at a time to a callback on its own worker thread. The same stage
+objects serve both without a shim.
+
+`Fork` runs its two branches one after the other, not concurrently. They are
+genuinely independent and only depend on the shared input, so threading them
+is tempting, and it was measured: it came out slower (0.882 vs 0.805
+ms/frame). The cursor branch is about a hundredth of the gesture branch's
+cost, so there is almost nothing to overlap, the pure-Python DTW loop holds
+the GIL regardless, and the submit/join handoff costs more than the overlap
+saves. Sequential is both faster and simpler here.
 
 ## Configuration
 
@@ -48,10 +105,10 @@ action scroll amount, keybindings) is a field on `AppConfig`
 `ValueError` on any section or key the dataclasses don't define, so a typo
 in `config.json` fails loudly instead of silently no-opping. A missing
 `config.json` yields `AppConfig()` (all defaults, matching the checked-in
-`config.json`). `App()` calls `load_config()` itself when constructed
+`config.json`). `DesktopApp()` calls `load_config()` itself when constructed
 without an explicit `AppConfig`, then threads the relevant section into
-each component's constructor (e.g. `CursorController(region_margin=...,
-smoothing=..., deadzone=...)`).
+each pipeline's constructor (e.g. `CursorPipeline(config.cursor,
+screen_size)`).
 
 ## Runtime split (why two `uv` venvs, not two Pythons)
 
@@ -82,28 +139,39 @@ manual/global `pip` installs on either side.
 
 ## Data flow
 
+Every stage is one-item-in/one-item-out, so nothing falls out of step with
+the frames driving it: a stage with nothing to report yields `None`, and
+`None` passes through the rest of the pipeline untouched.
+
 ```
-camera frame
-  -> HandLandmarker.detect_async()          (landmarker.py, via App.run())
-  -> HandLandmarkBuffer.on_result() callback stores two views of the same
-     hand, under a lock:
-       latest_landmarks        - image-space (pixel drawing only, cursor mode)
-       latest_world_landmarks  - real-world metric 3D (gesture features)
-  -> hand_joint_angles(world_hand)           (hand_angles.py)
-       21 landmarks -> 15 joint angles (degrees)
-  -> GestureRecorder.observe(angles, now_ms) (recorder.py)
-       quantizes via quantize_angles() (quantize.py, with hysteresis)
-       returns True only when the quantized pose crosses a bin
-       if recording: appends {t_ms, angles} on that change only
-                     (event-driven -> run-length-collapsed sequence)
-  -> when a bin changes AND not recording:
-       GestureMatcher.observe(quantized, now_ms)   (gesture_dtw.py)
-         DTW-aligns a rolling buffer of quantized events against every
-         loaded template; returns the best match under a live-adjustable
-         threshold (`[`/`]` keys), subject to per-template cooldown
-  -> run_action(matched_name, actions)       (actions.py)
-       looks up matched_name in the actions dict built by build_actions();
-       if mapped, fires the pyautogui call
+CaptureManager                             (vision/capture.py)
+  -> Frame (mirrored, strictly increasing timestamp)
+HandDetector                               (vision/detection.py)
+  -> HandLandmarker.detect_async(); the callback stores, under a lock,
+     the latest Hand(s) - each holding two views of the same hand:
+       landmarks        - image-space (pixel drawing, cursor mode)
+       world_landmarks  - real-world metric 3D (gesture features)
+  -> Detection(frame, hands); `.primary` is the hand the pipelines read
+
+Fork(GesturePipeline, CursorPipeline).apply(detection.primary)
+                                           (apps/desktop.py)
+
+GesturePipeline = AngleExtractor | MovementExtractor              (gestures/)
+                | GestureRecorder | GestureMatcher
+  -> AngleExtractor    Hand -> Pose: 21 world landmarks -> 15 joint angles
+  -> MovementExtractor Pose -> Movement, emitted only when the quantized
+                       pose crosses a bin (hysteresis); a still hand
+                       yields None (event-driven -> run-length-collapsed)
+  -> GestureRecorder   while recording, collects the movements and passes
+                       None on, so a gesture can't fire as it is recorded
+  -> GestureMatcher    DTW-aligns a rolling window of movements against
+                       every template in the GestureLibrary; returns the
+                       best match under a live-adjustable threshold
+                       (`[`/`]` keys), subject to per-template cooldown
+
+ActionDispatcher.dispatch(name)            (actions.py)
+  looks the name up in the fixed action set; if mapped, fires the
+  pyautogui call
 ```
 
 This runs unconditionally on every frame with a detected hand, independently
@@ -113,32 +181,47 @@ per-frame hand detection but don't gate each other.
 ### Cursor mode (independent of the flow above)
 
 ```
-camera frame
-  -> latest_landmarks (image-space, [0,1] normalized)  (landmarker.py, same detect_async() call)
-  -> hand_centroid(hand)                     (cursor_control.py)
-       mean (x, y) over all 21 landmarks - deliberately not a single
-       fingertip, so the tracked point stays stable while fingers move
-       through a gesture; this is what lets cursor mode and gesture
-       matching run at the same time off the same hand
-  -> CursorController.update(x, y)           (cursor_control.py)
-       dead-zone hold -> region-to-screen remap -> EMA smoothing -> pyautogui.moveTo()
+CursorPipeline = HandCenterExtractor | ScreenPointConverter        (cursor/)
+  -> HandCenterExtractor    Hand -> NormalizedPoint: mean (x, y) over all
+                            21 image-space landmarks - deliberately not a
+                            single fingertip, so the tracked point stays
+                            stable while fingers move through a gesture;
+                            this is what lets cursor mode and gesture
+                            matching run at once off the same hand
+  -> ScreenPointConverter   NormalizedPoint -> ScreenPoint: dead-zone hold
+                            -> region-to-screen remap -> EMA smoothing;
+                            a held hand yields None
+  -> CursorDriver.move_to(point)             (cursor/driver.py)
+                            the only part that touches pyautogui
 ```
 
-Toggled by `c` (configurable, `keybindings.toggle_cursor`) in `app.py`;
+Disabled, `CursorPipeline` yields nothing; re-enabling it resets the
+position history rather than sliding over from where the hand was last
+seen.
+
+Toggled by `c` (configurable, `keybindings.toggle_cursor`) in
+`apps/desktop.py`;
 independent of the `r` recording toggle. See `docs/DESIGN_MATH.md` for why
 the dead-zone + EMA combination is needed.
 
 ## Recording lifecycle
 
-`r` toggles `GestureRecorder` (driven from `App._handle_record_toggle`):
-- **start**: clears the frame buffer, resets the running quantized-pose
-  tracker.
+`r` toggles recording (driven from `DesktopApp._toggle_recording`, through
+`GesturePipeline.start_recording()` / `stop_recording()`):
+- **start**: clears the movement buffer and resets the running
+  quantized-pose tracker, so the template opens with the pose the hand is
+  in now rather than with its first change.
 - **stop**: prompts (in the terminal, via `input()` — this blocks the camera
-  loop, which is why `app.py` draws a "check terminal" hint on the frame
+  loop, which is why `apps/desktop.py` draws a "check terminal" hint on the
+  frame
   first) for an action name, e.g. `left-click`. The name is slugified into a
   filename (collisions get `-2`, `-3`, ... suffixes rather than overwriting).
-  Saved to `recordings/<slug>.npz` (see below), then templates are reloaded
-  so the new recording is immediately matchable.
+  `GestureLibrary.add()` resolves the name and admits the template in
+  memory, so the new gesture is immediately matchable without a reload. The
+  desktop app then hands it to `save_template()`, which writes
+  `recordings/<slug>.npz` (see below); the web app does not, so one browser
+  session's recordings never reach another's - see
+  `docs/adr/0002-gesture-libraries-are-in-memory-by-default.md`.
 
 ## Recording file format
 
@@ -148,29 +231,49 @@ size/parse speed over human-readability once the format stabilized:
 | key          | dtype   | shape  | meaning                              |
 |--------------|---------|--------|---------------------------------------|
 | `bin_size`   | float32 | scalar | degrees per quantization bin          |
-| `hysteresis` | float32 | scalar | degrees of boundary margin            |
-| `t_ms`       | int32   | (T,)   | ms since recording start, per frame   |
-| `angle_bins` | int16   | (T,15) | quantized angle **bin index**, not degrees — reconstruct via `index * bin_size` |
+| `angle_bins` | int32   | (T,15) | quantized angle **bin index**, not degrees — reconstruct via `index * bin_size` |
 
-`gesture_dtw.load_templates()` is the only reader; it reconstructs degrees
-on load. `t_ms` is stored but not currently consumed by matching — see
-`docs/DESIGN_MATH.md`.
+(`int32` since the suite landed; files written as `int16` still load, the
+reader takes any integer or float width.)
+
+`gestures/persistence.py` is the only reader and the only writer; it
+reconstructs degrees on load, and validates the declared shape, dtype and
+frame count from the `.npy` header before materialising anything, because a
+recording is attacker-supplied wherever persistence is deployed. A file that
+fails validation is logged and skipped, never raised: one unreadable
+recording costs that one gesture, not the program's ability to start. Saves
+go to a `.part` file beside the target and are renamed, so an interrupted
+write leaves nothing for the next run to trip over. No timing is stored — see
+`docs/adr/0001-recording-format-stores-no-timing.md`. Recordings written
+before that change carry extra `t_ms`/`hysteresis` keys and still load,
+because the reader never touched them.
 
 ## Module map
 
 | module                          | role                                                            |
 |----------------------------------|------------------------------------------------------------------|
-| `hand_angles.py`                | 21 landmarks -> 15 joint-angle feature vector                    |
-| `quantize.py`                   | per-angle binning with hysteresis (Schmitt trigger)               |
-| `recorder.py`                   | `GestureRecorder` — continuous quantized-pose tracking + event-driven recording + `.npz` I/O |
-| `gesture_dtw.py`                | `GestureTemplate`/`load_templates`, `GestureMatcher` (DTW live matching) |
-| `cursor_control.py`             | `hand_centroid`, `CursorController` — hand position -> real OS cursor (dead-zone + EMA smoothing) |
-| `actions.py`                    | `build_actions`/`run_action` — recording-name -> `pyautogui` action registry |
-| `landmarker.py`                 | MediaPipe `HandLandmarker` wiring + thread-safe latest-result buffer + first-run model download |
-| `overlay.py`                    | frame drawing: hand skeleton + HUD text                          |
+| `stage.py`                      | `Stage`/`OptionalStage`/`Fork` — the composition primitives      |
+| `domain.py`                     | the types that travel between stages                             |
+| `vision/capture.py`             | `CaptureManager` — webcam -> stream of mirrored, timestamped frames |
+| `vision/detection.py`           | `HandDetector` — MediaPipe wiring + thread-safe latest-result buffer |
+| `vision/model_asset.py`         | `ensure_model()` — first-run model download                      |
+| `gestures/angles.py`            | `AngleExtractor` — 21 landmarks -> 15 joint angles               |
+| `gestures/movement.py`          | `MovementExtractor` — binning with hysteresis (Schmitt trigger), emitting only on change |
+| `gestures/recorder.py`          | `GestureRecorder` — diverts movements out of the stream while recording |
+| `gestures/library.py`           | `GestureLibrary` — the in-memory templates and name resolution    |
+| `gestures/persistence.py`       | `load_templates()` / `save_template()` — the `.npz` I/O, and the only code that touches `recordings/` |
+| `gestures/matcher.py`           | `GestureMatcher` — DTW live matching against the library         |
+| `gestures/pipeline.py`          | `GesturePipeline` — the four above, composed; the recording API  |
+| `cursor/center.py`              | `HandCenterExtractor` — hand -> normalized centre point          |
+| `cursor/screen.py`              | `ScreenPointConverter` — dead zone + region remap + EMA smoothing |
+| `cursor/pipeline.py`            | `CursorPipeline` — the two above, composed, with an on/off switch |
+| `cursor/driver.py`              | `CursorDriver` — the only `pyautogui` cursor call                |
+| `actions.py`                    | `ActionDispatcher` — gesture name -> `pyautogui` action          |
+| `apps/overlay.py`               | frame drawing: hand skeleton + HUD text                          |
 | `config.py`                     | `AppConfig` dataclasses + `load_config()` (reads `config.json`)  |
-| `app.py`                        | `App` — camera loop, key handling, ties it all together          |
+| `apps/desktop.py`               | `DesktopApp` — camera loop, key handling, ties it all together   |
+| `apps/web.py`                   | the Streamlit demo (report-only, no `pyautogui`)                 |
 | `__main__.py`                   | entry point (`python -m hand_recognition`)                       |
-| `model/`                        | scaffolding for a hand-hand-trained landmark model; see `docs/TRAINING.md` |
+| `model/`                        | scaffolding for a hand-trained landmark model; see `docs/TRAINING.md` |
 
 See `docs/DESIGN_MATH.md` for why each of these pieces works the way it does.

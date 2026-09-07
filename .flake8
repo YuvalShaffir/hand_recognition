@@ -1,0 +1,6 @@
+[flake8]
+max-line-length = 88
+extend-ignore = E203
+# The venvs live in the repo (`.venv` on Windows, `.venv-wsl` under WSL, and
+# whatever CI builds), and flake8 does not skip them by default.
+extend-exclude = .venv,.venv-wsl,.venv-*,build,dist

@@ -1,5 +1,7 @@
 # hand_recognition
 
+[![CI](https://github.com/YuvalShaffir/hand_recognition/actions/workflows/ci.yml/badge.svg)](https://github.com/YuvalShaffir/hand_recognition/actions/workflows/ci.yml)
+
 Webcam hand-gesture recognition that maps custom gestures to real OS mouse
 actions — record a hand pose sequence as a named macro, and when you perform
 it again live, it fires the mapped action (`left-click`, `right-click`,
@@ -13,12 +15,20 @@ hand landmark detection.
 
 ```
 camera frame -> MediaPipe HandLandmarker -> 21 3D hand landmarks
-             -> 15 joint angles (finger bend/spread, in degrees)
-             -> quantized to quality bins with hysteresis (anti-jitter)
-             -> event-driven sequence of pose changes
-             -> DTW-matched live against recorded gesture templates
-             -> best match above threshold -> mapped OS action fires
+             |
+             +-> 15 joint angles (finger bend/spread, in degrees)
+             |   -> quantized to angle bins with hysteresis (anti-jitter)
+             |   -> event-driven sequence of pose changes
+             |   -> DTW-matched live against recorded gesture templates
+             |   -> best match above threshold -> mapped OS action fires
+             |
+             +-> hand centre point -> dead zone -> screen remap -> EMA
+                 -> the real OS cursor moves
 ```
+
+Each arrow is a `Stage`: one item in, one item out, composed with `|` into
+the two pipelines above. Both run off the same detected hand every frame,
+neither aware of the other.
 
 A few choices make this work reliably:
 
@@ -103,24 +113,33 @@ error at startup (typo protection). Full schema:
 (Keybindings above are the defaults — remappable in `config.json`.)
 Recordings save to `recordings/<name>.npz`. Known action names live in
 [`src/hand_recognition/actions.py`](src/hand_recognition/actions.py)'s
-`build_actions()` — an unrecognized name still records and can be matched,
+`ActionDispatcher` — an unrecognized name still records and can be matched,
 but won't trigger anything.
 
 ## Project layout
 
 | module | role |
 |--------|------|
-| `hand_angles.py` | 21 landmarks -> 15 joint-angle feature vector |
-| `quantize.py` | per-angle binning with hysteresis |
-| `recorder.py` | pose tracking + event-driven recording + `.npz` I/O |
-| `gesture_dtw.py` | template loading + live DTW matching |
-| `cursor_control.py` | hand position -> real OS cursor |
-| `actions.py` | recording-name -> `pyautogui` action registry |
-| `landmarker.py` | MediaPipe `HandLandmarker` wiring + latest-result buffer |
-| `overlay.py` | hand-skeleton + HUD frame drawing |
+| `stage.py` | `Stage`/`OptionalStage`/`Fork` — the composition primitives |
+| `domain.py` | the types that travel between stages |
+| `vision/` | webcam -> mirrored, timestamped frames -> detected hands |
+| `gestures/` | hand -> pose -> movement -> gesture name, plus recording and the template library |
+| `cursor/` | hand -> centre point -> screen position -> real OS cursor |
+| `actions.py` | gesture name -> `pyautogui` action |
+| `apps/` | the two front-ends: desktop (`desktop.py`) and Streamlit (`web.py`), plus shared `overlay.py` drawing |
 | `config.py` | `AppConfig` dataclasses + `config.json` loading |
-| `app.py` | camera loop, key handling, ties it all together |
 | `__main__.py` | entry point (`python -m hand_recognition`) |
 
 All under `src/hand_recognition/`. Full data flow and module details:
-[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md); the vocabulary these names
+come from: [`CONTEXT.md`](CONTEXT.md).
+
+There is also a browser demo — the same pipelines, reporting matches instead
+of driving the OS:
+
+```
+streamlit run src/hand_recognition/apps/web.py
+```
+
+It never imports `pyautogui`, so unlike the desktop app it runs anywhere,
+WSL included.
