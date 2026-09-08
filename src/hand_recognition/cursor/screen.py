@@ -24,6 +24,16 @@ class ScreenPointConverter(OptionalStage[NormalizedPoint, ScreenPoint]):
         self._committed: NormalizedPoint | None = None
         self._smoothed: NormalizedPoint | None = None
 
+    @property
+    def screen_size(self) -> tuple[int, int]:
+        return self._screen_width, self._screen_height
+
+    @screen_size.setter
+    def screen_size(self, value: tuple[int, int]) -> None:
+        """Safe to change mid-stream: smoothing and the dead zone both work
+        in normalized space, and the size is applied as the last step."""
+        self._screen_width, self._screen_height = value
+
     def transform(self, item: NormalizedPoint) -> ScreenPoint | None:
         if self._held(item):
             return None

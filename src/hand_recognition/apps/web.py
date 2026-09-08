@@ -11,6 +11,7 @@ import time
 from dataclasses import dataclass
 
 import av
+import cv2
 import streamlit as st
 from streamlit_webrtc import VideoProcessorBase, webrtc_streamer
 
@@ -19,13 +20,17 @@ from hand_recognition.cursor import CursorPipeline
 from hand_recognition.vision import HandDetector
 from hand_recognition.domain import Frame, ScreenPoint
 from hand_recognition.gestures import GestureLibrary, GesturePipeline
-from hand_recognition.apps.overlay import draw_hud, draw_landmarks
+from hand_recognition.apps.overlay import (
+    draw_cursor_marker,
+    draw_hud,
+    draw_landmarks,
+)
 from hand_recognition.stage import Fork
 
 RTC_CONFIGURATION = {"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]}
 
-# Only used to scale the reported cursor position; nothing is moved.
-REPORTED_SCREEN_SIZE = (1920, 1080)
+# Placeholder only: `recv()` sets the real frame size before the first apply.
+INITIAL_SCREEN_SIZE = (1, 1)
 
 
 @dataclass
@@ -43,7 +48,7 @@ class GestureVideoProcessor(VideoProcessorBase):
         config = load_config()
         self.config = config
         self.gestures = GesturePipeline(GestureLibrary(), config.quantize, config.match)
-        self.cursor = CursorPipeline(config.cursor, REPORTED_SCREEN_SIZE)
+        self.cursor = CursorPipeline(config.cursor, INITIAL_SCREEN_SIZE)
         self._recognize = Fork(self.gestures, self.cursor)
         self._detector = HandDetector(config.paths.model_path, config.landmarker)
         self._detector.__enter__()
@@ -52,12 +57,21 @@ class GestureVideoProcessor(VideoProcessorBase):
 
     def recv(self, frame: av.VideoFrame) -> av.VideoFrame:
         image = frame.to_ndarray(format="bgr24")
+        # WebRTC hands over the raw camera image; the desktop app gets its
+        # mirroring from `CaptureManager`, which this front-end never uses.
+        # Without it the hand - and so the cursor - moves the wrong way.
+        cv2.flip(image, 1, dst=image)
+        # The marker is drawn into this frame, so the mapping target is the
+        # frame - re-read every frame in case WebRTC renegotiates the size.
+        self.cursor.screen_size = (image.shape[1], image.shape[0])
         detection = self._detector.apply(
             Frame(image=image, timestamp_ms=int(time.monotonic() * 1000))
         )
         gesture, point = self._recognize.apply(detection.primary)
 
         draw_landmarks(image, detection.hands)
+        if self.cursor.marker is not None:
+            draw_cursor_marker(image, self.cursor.marker)
         draw_hud(
             image,
             match_threshold=self.gestures.threshold,

@@ -646,6 +646,29 @@ Wiring, not maths — each stage is tested above.
 - `test_none_hands_yield_none_when_enabled` (sad).
 - `test_stream_length_is_preserved_in_both_states` (the `None` law).
 
+**The marker hold rule** (ADR 0003), through the pipeline's interface:
+- `test_marker_is_none_before_any_hand`.
+- `test_marker_holds_while_the_deadzone_withholds_a_point` — and `apply`
+  still returns `None` on that frame, which is what stops `CursorDriver`
+  firing a `moveTo` per frame for a motionless hand.
+- `test_marker_clears_when_the_hand_leaves_the_frame` (sad).
+- `test_marker_clears_when_cursor_mode_is_disabled`.
+- `test_screen_size_follows_the_setter` — the mapping target is reassigned
+  every frame by `apps/web.py`; points scale to the new size.
+
+## `test_overlay.py`
+
+`cv2` faked at the module seam. Only `draw_cursor_marker` is covered; the
+older `draw_landmarks`/`draw_hud` backfill is its own issue.
+
+- `test_marker_is_filled_in_the_marker_colour` (happy).
+- `test_marker_is_outlined_so_it_survives_a_pale_background` — a magenta fill
+  alone disappears over a pale hand.
+- `test_the_polygon_tip_sits_on_the_point` — the tip, not a corner or a
+  centre, is what the reported point means.
+- `test_the_polygon_keeps_its_shape_wherever_it_is_drawn` — translation only.
+- `test_the_fill_and_the_outline_use_the_same_polygon`.
+
 ## `test_driver.py`
 
 `pyautogui` faked. The only cursor module that touches it.
@@ -812,6 +835,12 @@ the places the code won.
   finding rather than fixing it. `assert_rejected` in
   `test_persistence.py` asserts the file is skipped *and* that the reason
   names it.
+- **`screen_size` following the frame is tested in `test_pipeline.py`
+  (cursor), not `test_overlay.py`.** `apps/web.py` calls `main()` at import
+  and pulls in `streamlit`/`streamlit_webrtc`, so `recv()` cannot be reached
+  from the suite; the assignment it makes is one line, and the behaviour that
+  matters — points scaling to a size set after construction — is the
+  pipeline's.
 - **Findings 1-6 are fixed, not pinned.** Config values are validated on
   load, recorder and template lengths are capped
   (`domain.MAX_TEMPLATE_FRAMES`), `.npz` files are validated from the header
