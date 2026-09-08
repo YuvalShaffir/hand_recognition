@@ -79,3 +79,52 @@ def test_stream_length_is_preserved_in_both_states(config, enabled):
     stream = [hand_at(0.1), None, hand_at(0.9), None, hand_at(0.5)]
 
     assert len(list(pipeline(iter(stream)))) == len(stream)
+
+
+def test_marker_is_none_before_any_hand(config):
+    pipeline = CursorPipeline(config, SCREEN, enabled=True)
+
+    assert pipeline.marker is None
+
+
+def test_marker_holds_while_the_deadzone_withholds_a_point():
+    """The hold rule: a still hand reports nothing, and the marker stays put
+    rather than strobing off between committed moves."""
+    pipeline = CursorPipeline(
+        CursorConfig(region_margin=0.2, smoothing=1.0, deadzone=0.2), SCREEN, True
+    )
+    first = pipeline.apply(hand_at(0.4))
+
+    held = pipeline.apply(hand_at(0.41))
+
+    assert held is None
+    assert pipeline.marker == first
+
+
+def test_marker_clears_when_the_hand_leaves_the_frame(config):
+    pipeline = CursorPipeline(config, SCREEN, enabled=True)
+    pipeline.apply(hand_at(0.4))
+
+    pipeline.apply(None)
+
+    assert pipeline.marker is None
+
+
+def test_marker_clears_when_cursor_mode_is_disabled(config):
+    pipeline = CursorPipeline(config, SCREEN, enabled=True)
+    pipeline.apply(hand_at(0.4))
+
+    pipeline.enabled = False
+
+    assert pipeline.marker is None
+
+
+def test_screen_size_follows_the_setter(config):
+    pipeline = CursorPipeline(config, SCREEN, enabled=True)
+
+    pipeline.screen_size = (200, 100)
+
+    assert pipeline.screen_size == (200, 100)
+    point = pipeline.apply(hand_at(0.5))
+    assert point is not None
+    assert 0.0 <= point.x <= 200 and 0.0 <= point.y <= 100

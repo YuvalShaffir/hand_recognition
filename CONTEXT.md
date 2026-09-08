@@ -89,9 +89,16 @@ reported — it is simply not a macro.
 _Avoid_: binding, mapping, shortcut, hotkey.
 
 **Cursor Mode**:
-Driving the real OS cursor from the hand's position in the camera frame. It
-runs independently of matching, and the two can be active at once.
+Driving a cursor from the hand's position in the camera frame — the real OS
+cursor on the desktop, a drawn Cursor Marker in the browser. It runs
+independently of matching, and the two can be active at once.
 _Avoid_: mouse mode, pointer mode, tracking mode.
+
+**Cursor Marker**:
+A drawn stand-in for the cursor, showing where cursor mode is pointing
+without an OS cursor to move. It persists while a hand is in frame,
+including while the dead zone is holding the hand still.
+_Avoid_: fake cursor, pointer, crosshair.
 
 ### Machinery
 

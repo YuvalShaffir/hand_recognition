@@ -199,6 +199,21 @@ Disabled, `CursorPipeline` yields nothing; re-enabling it resets the
 position history rather than sliding over from where the hand was last
 seen.
 
+`CursorPipeline` also carries the state a front-end that draws its own
+cursor needs:
+
+- **`marker`** (read-only) — the last reported point, *held* while the dead
+  zone withholds one, and cleared when the hand leaves the frame or cursor
+  mode is switched off. A marker drawn only on the frames `apply` reports
+  would strobe, because a still hand is held on most of them — see
+  `docs/DESIGN_MATH.md` for the dead zone that makes this necessary, and
+  `docs/adr/0003-the-cursor-marker-holds-what-apply-withholds.md` for why
+  `apply` itself is left alone.
+- **`screen_size`** (mutable) — the mapping target. `apps/web.py` assigns
+  the video frame's own dimensions every frame, so a WebRTC resolution
+  renegotiation can't leave the marker offset from the hand. Safe mid-stream:
+  the converter smooths in normalized space and applies the size last.
+
 Toggled by `c` (configurable, `keybindings.toggle_cursor`) in
 `apps/desktop.py`;
 independent of the `r` recording toggle. See `docs/DESIGN_MATH.md` for why
@@ -269,10 +284,10 @@ because the reader never touched them.
 | `cursor/pipeline.py`            | `CursorPipeline` — the two above, composed, with an on/off switch |
 | `cursor/driver.py`              | `CursorDriver` — the only `pyautogui` cursor call                |
 | `actions.py`                    | `ActionDispatcher` — gesture name -> `pyautogui` action          |
-| `apps/overlay.py`               | frame drawing: hand skeleton + HUD text                          |
+| `apps/overlay.py`               | frame drawing: hand skeleton, HUD text, cursor marker            |
 | `config.py`                     | `AppConfig` dataclasses + `load_config()` (reads `config.json`)  |
 | `apps/desktop.py`               | `DesktopApp` — camera loop, key handling, ties it all together   |
-| `apps/web.py`                   | the Streamlit demo (report-only, no `pyautogui`)                 |
+| `apps/web.py`                   | the Streamlit demo (report-only, no `pyautogui`); mirrors its own frames |
 | `__main__.py`                   | entry point (`python -m hand_recognition`)                       |
 | `model/`                        | scaffolding for a hand-trained landmark model; see `docs/TRAINING.md` |
 

@@ -3,9 +3,25 @@ from collections.abc import Sequence
 import cv2
 import numpy as np
 
-from ..domain import Hand
+from ..domain import Hand, ScreenPoint
 
 HAND_CONNECTIONS = ((0, 0), (1, 4), (5, 8), (9, 12), (13, 16), (17, 20))
+
+# Magenta: the rest of the palette is spoken for - green landmark lines, red
+# landmark dots, cyan threshold text, blue CURSOR MODE, red REC.
+CURSOR_MARKER_COLOR = (255, 0, 255)
+CURSOR_MARKER_OUTLINE_COLOR = (0, 0, 0)
+
+# A classic tilted mouse pointer, in pixels from its tip at (0, 0).
+CURSOR_MARKER_POINTS = (
+    (0, 0),
+    (0, 22),
+    (5, 17),
+    (9, 26),
+    (13, 24),
+    (9, 16),
+    (16, 16),
+)
 
 
 def draw_landmarks(image: np.ndarray, hands: Sequence[Hand]) -> None:
@@ -75,4 +91,21 @@ def draw_recording_prompt_hint(image: np.ndarray) -> None:
         0.8,
         (0, 255, 255),
         2,
+    )
+
+
+def draw_cursor_marker(image: np.ndarray, point: ScreenPoint) -> None:
+    """Draws a pointer at `point`, which is already in this image's pixels -
+    scaling here instead would put the marker and the hand it tracks a
+    region-margin apart."""
+    polygon = np.array(CURSOR_MARKER_POINTS, dtype=np.int32) + np.array(
+        [int(point.x), int(point.y)], dtype=np.int32
+    )
+    cv2.fillPoly(image, [polygon], color=CURSOR_MARKER_COLOR)
+    cv2.polylines(
+        image,
+        [polygon],
+        isClosed=True,
+        color=CURSOR_MARKER_OUTLINE_COLOR,
+        thickness=1,
     )
