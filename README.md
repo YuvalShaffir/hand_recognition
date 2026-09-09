@@ -143,3 +143,7 @@ streamlit run src/hand_recognition/apps/web.py
 
 It never imports `pyautogui`, so unlike the desktop app it runs anywhere,
 WSL included.
+
+Deploying it to Streamlit Community Cloud needs `packages.txt` at the repo
+root: `opencv-python` links against `libGL`/`glib`, which the deploy image
+does not ship, and `import cv2` fails at startup without them.
