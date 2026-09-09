@@ -42,7 +42,10 @@ And the front-ends, which own no recognition state:
   be the monolithic `app.py`.
 - `apps/web.py` — the Streamlit demo, `streamlit run
   src/hand_recognition/apps/web.py`. Report-only: it must not reach
-  `actions.py` or `cursor/driver.py`, which import `pyautogui`.
+  `actions.py` or `cursor/driver.py`, which import `pyautogui`. That is why
+  `apps/__init__.py` is empty: a package `__init__` runs when anything inside
+  it is imported, so re-exporting `DesktopApp` there put `pyautogui` behind
+  `apps/overlay.py` too, and the headless deploy died on `import`.
 - `apps/overlay.py` — frame drawing shared by both: hand skeleton
   (`draw_landmarks`) and HUD text (`draw_hud`,
   `draw_recording_prompt_hint`).

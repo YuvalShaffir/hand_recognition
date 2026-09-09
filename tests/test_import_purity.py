@@ -122,6 +122,13 @@ def _imported_modules(module: str, path: Path) -> set[str]:
                 )
             found.add(base)
             found.update(f"{base}.{alias.name}" for alias in node.names)
+    # A package's `__init__.py` runs when anything inside it is imported, so
+    # `apps.overlay` reaching `apps` is a real edge, not a formality: it is
+    # how a `DesktopApp` re-export in `apps/__init__.py` pulled `pyautogui`
+    # into the web app and broke the headless deploy.
+    found.update(
+        name.rpartition(".")[0] for name in list(found) if "." in name.partition(".")[2]
+    )
     return {name for name in found if name.startswith("hand_recognition")}
 
 
@@ -152,6 +159,22 @@ def test_web_app_module_graph_excludes_pyautogui(forbidden):
 
 def test_the_module_graph_walker_is_not_vacuous():
     assert "hand_recognition.actions" in module_graph("hand_recognition.apps.desktop")
+
+
+def test_overlay_imports_without_pyautogui():
+    """The web app's one import out of `apps/`, actually executed - the AST
+    walk above reads modules rather than running them, so only this catches a
+    package `__init__` importing a front-end."""
+    result = run_python(
+        _BLOCK_PYAUTOGUI,
+        """
+        import hand_recognition.apps.overlay
+        print("imported")
+        """,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "imported" in result.stdout
 
 
 def test_cursor_package_init_does_not_pull_the_driver():

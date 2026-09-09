@@ -1,4 +1,4 @@
-from .apps import DesktopApp
+from .apps.desktop import DesktopApp
 
 
 def main() -> None:
