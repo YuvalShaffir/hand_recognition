@@ -11,6 +11,9 @@ from hand position ("cursor mode"), simultaneously with gesture matching.
 Built on [MediaPipe](https://ai.google.dev/edge/mediapipe/solutions/vision/hand_landmarker)
 hand landmark detection.
 
+## Demo
+You can try it out [here](https://yuvalshaffir-hand-recognition-srchand-recognitionappsweb-lzhgiw.streamlit.app/)
+
 ## How it works
 
 ```
